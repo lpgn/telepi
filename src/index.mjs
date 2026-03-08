@@ -57,33 +57,64 @@ class PiSessionPool {
     this.sessions = new Map();
   }
 
-  async get(chatId) {
-    const key = String(chatId);
-    if (this.sessions.has(key)) return this.sessions.get(key);
+  getSessionDir(chatId) {
+    return path.join(SESSIONS_DIR, String(chatId));
+  }
 
-    const sessionDir = path.join(SESSIONS_DIR, key);
+  async create(chatId, sessionManager) {
+    const sessionDir = this.getSessionDir(chatId);
     await mkdir(sessionDir, { recursive: true });
 
-    const entry = createAgentSession({
+    return createAgentSession({
       cwd: this.workspaceDir,
       agentDir: this.agentDir,
       authStorage,
       modelRegistry,
       model: this.model,
       thinkingLevel: this.thinkingLevel,
-      sessionManager: SessionManager.continueRecent(this.workspaceDir, sessionDir),
+      sessionManager,
     }).then(({ session, modelFallbackMessage }) => {
       if (modelFallbackMessage) {
         console.warn(`[chat ${chatId}] ${modelFallbackMessage}`);
       }
       return session;
     });
+  }
 
+  async get(chatId) {
+    const key = String(chatId);
+    if (this.sessions.has(key)) return this.sessions.get(key);
+
+    const entry = this.create(chatId, SessionManager.continueRecent(this.workspaceDir, this.getSessionDir(chatId)));
     this.sessions.set(key, entry);
     return entry;
   }
 
-  async clear(chatId) {
+  async replace(chatId, sessionManager) {
+    const key = String(chatId);
+    await this.dispose(chatId);
+    const entry = this.create(chatId, sessionManager);
+    this.sessions.set(key, entry);
+    return entry;
+  }
+
+  async newSession(chatId) {
+    const session = await this.get(chatId);
+    await session.newSession();
+    return session;
+  }
+
+  async list(chatId) {
+    const sessionDir = this.getSessionDir(chatId);
+    await mkdir(sessionDir, { recursive: true });
+    return SessionManager.list(this.workspaceDir, sessionDir);
+  }
+
+  async resume(chatId, sessionPath) {
+    return this.replace(chatId, SessionManager.open(sessionPath, this.getSessionDir(chatId)));
+  }
+
+  async dispose(chatId) {
     const key = String(chatId);
     const existing = this.sessions.get(key);
     if (existing) {
@@ -91,12 +122,15 @@ class PiSessionPool {
         const session = await existing;
         session.dispose();
       } catch {
-        // Ignore broken session during clear.
+        // Ignore broken session during dispose.
       }
       this.sessions.delete(key);
     }
+  }
 
-    await rm(path.join(SESSIONS_DIR, key), { recursive: true, force: true });
+  async clear(chatId) {
+    await this.dispose(chatId);
+    await rm(this.getSessionDir(chatId), { recursive: true, force: true });
   }
 
   async disposeAll() {
@@ -144,9 +178,14 @@ bot.command("start", async (ctx) => {
     [
       "Remote admin bridge is ready.",
       `State: ${isLocked() ? "locked" : `unlocked until ${new Date(unlockState.unlockedUntil).toISOString()}`}`,
-      "Commands: /status, /unlock <code>, /lock, /clear",
+      "Use /help to see commands.",
     ].join("\n")
   );
+});
+
+bot.command("help", async (ctx) => {
+  await audit("HELP", ctx, {});
+  await ctx.reply(helpText());
 });
 
 bot.command("status", async (ctx) => {
@@ -186,16 +225,106 @@ bot.command("lock", async (ctx) => {
 });
 
 bot.command("clear", async (ctx) => {
-  if (isLocked()) {
-    await audit("CLEAR_DENIED_LOCKED", ctx, {});
-    await ctx.reply("Locked. Use /unlock first.");
-    return;
-  }
+  if (!(await requireUnlocked(ctx, "CLEAR_DENIED_LOCKED"))) return;
 
   await withChatLock(ctx.chat.id, async () => {
     await sessionPool.clear(ctx.chat.id);
     await audit("CLEAR", ctx, {});
     await ctx.reply("Cleared this chat's pi session.");
+  });
+});
+
+bot.command("new", async (ctx) => {
+  if (!(await requireUnlocked(ctx, "NEW_DENIED_LOCKED"))) return;
+
+  await withChatLock(ctx.chat.id, async () => {
+    const session = await sessionPool.newSession(ctx.chat.id);
+    await audit("NEW_SESSION", ctx, { sessionId: session.sessionId, sessionFile: session.sessionFile });
+    await ctx.reply("Started a fresh session for this chat.");
+  });
+});
+
+bot.command("session", async (ctx) => {
+  if (!(await requireUnlocked(ctx, "SESSION_DENIED_LOCKED"))) return;
+
+  await withChatLock(ctx.chat.id, async () => {
+    const session = await sessionPool.get(ctx.chat.id);
+    const stats = session.getSessionStats();
+    await audit("SESSION_INFO", ctx, { sessionId: stats.sessionId, sessionFile: stats.sessionFile });
+    await ctx.reply(formatSessionInfo(session, stats, ctx.chat.id));
+  });
+});
+
+bot.command("compact", async (ctx) => {
+  if (!(await requireUnlocked(ctx, "COMPACT_DENIED_LOCKED"))) return;
+
+  const instructions = commandArgs(ctx.message?.text);
+  await withChatLock(ctx.chat.id, async () => {
+    try {
+      await ctx.api.sendChatAction(ctx.chat.id, "typing");
+      const session = await sessionPool.get(ctx.chat.id);
+      await session.compact(instructions || undefined);
+      await audit("COMPACT", ctx, { customInstructions: Boolean(instructions), sessionId: session.sessionId });
+      await ctx.reply(instructions ? "Compacted session with custom instructions." : "Compacted session.");
+    } catch (error) {
+      await audit("COMPACT_ERROR", ctx, { error: error?.message || String(error) });
+      await ctx.reply(`Compaction failed: ${error?.message || String(error)}`);
+    }
+  });
+});
+
+bot.command("name", async (ctx) => {
+  if (!(await requireUnlocked(ctx, "NAME_DENIED_LOCKED"))) return;
+
+  const name = commandArgs(ctx.message?.text);
+  if (!name) {
+    await audit("NAME_MISSING", ctx, {});
+    await ctx.reply("Usage: /name <label>");
+    return;
+  }
+
+  await withChatLock(ctx.chat.id, async () => {
+    const session = await sessionPool.get(ctx.chat.id);
+    session.setSessionName(name);
+    await audit("SESSION_NAMED", ctx, { sessionId: session.sessionId, name });
+    await ctx.reply(`Named this session: ${name}`);
+  });
+});
+
+bot.command("resume", async (ctx) => {
+  if (!(await requireUnlocked(ctx, "RESUME_DENIED_LOCKED"))) return;
+
+  const arg = commandArgs(ctx.message?.text);
+  await withChatLock(ctx.chat.id, async () => {
+    const sessions = await sessionPool.list(ctx.chat.id);
+    if (!sessions.length) {
+      await audit("RESUME_EMPTY", ctx, {});
+      await ctx.reply("No saved sessions found for this chat.");
+      return;
+    }
+
+    if (!arg) {
+      await audit("RESUME_LIST", ctx, { count: sessions.length });
+      await ctx.reply(formatResumeList(sessions));
+      return;
+    }
+
+    const index = Number(arg);
+    if (!Number.isInteger(index) || index < 1 || index > sessions.length) {
+      await audit("RESUME_BAD_INDEX", ctx, { arg, count: sessions.length });
+      await ctx.reply(`Pick a number between 1 and ${sessions.length}. Use /resume to list sessions.`);
+      return;
+    }
+
+    const selected = sessions[index - 1];
+    const session = await sessionPool.resume(ctx.chat.id, selected.path);
+    await audit("RESUME_OPEN", ctx, { index, sessionId: session.sessionId, sessionFile: session.sessionFile });
+    await ctx.reply([
+      `Resumed session ${index}.`,
+      `Name: ${selected.name || "(unnamed)"}`,
+      `Updated: ${selected.modified.toISOString()}`,
+      `First message: ${safePreview(selected.firstMessage || "") || "(empty)"}`,
+    ].join("\n"));
   });
 });
 
@@ -541,6 +670,64 @@ function optionalNumericEnv(name) {
 function expandHome(input) {
   if (!input.startsWith("~")) return input;
   return path.join(os.homedir(), input.slice(1));
+}
+
+async function requireUnlocked(ctx, event) {
+  if (!isLocked()) return true;
+  await audit(event, ctx, {});
+  await ctx.reply("Locked. Use /unlock first.");
+  return false;
+}
+
+function helpText() {
+  return [
+    "Available commands:",
+    "/status — show lock state",
+    "/unlock <code> — unlock temporarily",
+    "/lock — lock immediately",
+    "/clear — wipe this chat's saved session history",
+    "/new — start a fresh session for this chat",
+    "/session — show current session details",
+    "/compact [instructions] — compact long session context",
+    "/name <label> — name the current session",
+    "/resume — list saved sessions for this chat",
+    "/resume <n> — reopen one of those sessions",
+    "/help — show this help",
+    "",
+    "Normal text prompts are forwarded to pi only while unlocked.",
+  ].join("\n");
+}
+
+function formatSessionInfo(session, stats, chatId) {
+  return [
+    `Chat: ${chatId}`,
+    `Session ID: ${stats.sessionId}`,
+    `Name: ${session.sessionName || "(unnamed)"}`,
+    `File: ${stats.sessionFile || "(none)"}`,
+    `Messages: ${stats.totalMessages} total (${stats.userMessages} user, ${stats.assistantMessages} assistant, ${stats.toolCalls} tool calls)` ,
+    `Tokens: ${stats.tokens.total} total (${stats.tokens.input} in, ${stats.tokens.output} out, ${stats.tokens.cacheRead} cache read, ${stats.tokens.cacheWrite} cache write)`,
+    `Cost: ${formatCost(stats.cost)}`,
+    `State: ${isLocked() ? "locked" : `unlocked until ${new Date(unlockState.unlockedUntil).toISOString()}`}`,
+  ].join("\n");
+}
+
+function formatResumeList(sessions) {
+  const lines = ["Saved sessions for this chat:"];
+  sessions.slice(0, 12).forEach((entry, index) => {
+    lines.push(
+      `${index + 1}. ${entry.name || "(unnamed)"} — ${entry.modified.toISOString()} — ${safePreview(entry.firstMessage || "(empty)")}`
+    );
+  });
+  if (sessions.length > 12) {
+    lines.push(`…and ${sessions.length - 12} more. Use a smaller habit, or I can add pagination later.`);
+  }
+  lines.push("", "Use /resume <number> to reopen one.");
+  return lines.join("\n");
+}
+
+function formatCost(value) {
+  const number = Number(value || 0);
+  return `$${number.toFixed(4)}`;
 }
 
 function commandArgs(text) {
