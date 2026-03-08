@@ -3,23 +3,23 @@ import os from "node:os";
 import path from "node:path";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
+import { APP_DIR, PACKAGE_DIR } from "./paths.mjs";
 
-export const BASE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const RUN_DIR = path.join(BASE_DIR, "run");
-export const LOG_DIR = path.join(BASE_DIR, "logs");
-export const SHARE_DIR = path.join(BASE_DIR, "share");
+export const BASE_DIR = APP_DIR;
+export const RUN_DIR = path.join(APP_DIR, "run");
+export const LOG_DIR = path.join(APP_DIR, "logs");
+export const SHARE_DIR = path.join(APP_DIR, "share");
 export const PID_FILE = path.join(RUN_DIR, "bridge.pid");
-export const OUT_LOG = path.join(BASE_DIR, "bridge.out");
+export const OUT_LOG = path.join(APP_DIR, "bridge.out");
 export const AUDIT_LOG = path.join(LOG_DIR, "audit.log");
-export const ENTRYPOINT = path.join(BASE_DIR, "src", "index.mjs");
-export const ENV_FILE = path.join(BASE_DIR, ".env");
-export const ENV_EXAMPLE_FILE = path.join(BASE_DIR, ".env.example");
-export const SYSTEMD_DIR = path.join(BASE_DIR, "systemd");
-export const SYSTEMD_LOCAL_FILE = path.join(SYSTEMD_DIR, "telegram-pi-bridge.service");
-export const SYSTEMD_TEMPLATE_FILE = path.join(SYSTEMD_DIR, "telegram-pi-bridge.service.example");
+export const ENTRYPOINT = path.join(PACKAGE_DIR, "src", "index.mjs");
+export const ENV_FILE = path.join(APP_DIR, ".env");
+export const ENV_EXAMPLE_FILE = path.join(PACKAGE_DIR, ".env.example");
+export const SYSTEMD_DIR = path.join(APP_DIR, "systemd");
+export const SYSTEMD_LOCAL_FILE = path.join(SYSTEMD_DIR, "telepi.service");
+export const SYSTEMD_TEMPLATE_FILE = path.join(PACKAGE_DIR, "systemd", "telepi.service.example");
 export const PI_AUTH_FILE = path.join(os.homedir(), ".pi", "agent", "auth.json");
-export const SYSTEMD_UNIT = "telegram-pi-bridge.service";
+export const SYSTEMD_UNIT = "telepi.service";
 const execFileAsync = promisify(execFile);
 
 export async function ensureRuntimeDirs() {
@@ -389,9 +389,9 @@ export async function triggerLocalUnlock() {
 }
 
 export function renderSystemdService({ workingDirectory, user }) {
-  const safeDir = workingDirectory || "/opt/telegram-pi-bridge";
+  const safeDir = workingDirectory || "/opt/telepi";
   const safeUser = user || "youruser";
-  return `[Unit]\nDescription=Telegram Pi Bridge\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser=${safeUser}\nWorkingDirectory=${safeDir}\nEnvironmentFile=${safeDir}/.env\nExecStart=/usr/bin/npm start\nRestart=always\nRestartSec=5\nNoNewPrivileges=true\nPrivateTmp=true\nProtectControlGroups=true\nProtectKernelTunables=true\nProtectKernelModules=true\nLockPersonality=true\nRestrictSUIDSGID=true\nUMask=0077\n\n[Install]\nWantedBy=multi-user.target\n`;
+  return `[Unit]\nDescription=telepi\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser=${safeUser}\nWorkingDirectory=${safeDir}\nEnvironmentFile=${safeDir}/.env\nExecStart=/usr/bin/env telepi\nRestart=always\nRestartSec=5\nNoNewPrivileges=true\nPrivateTmp=true\nProtectControlGroups=true\nProtectKernelTunables=true\nProtectKernelModules=true\nLockPersonality=true\nRestrictSUIDSGID=true\nUMask=0077\n\n[Install]\nWantedBy=multi-user.target\n`;
 }
 
 export async function testConfiguration() {

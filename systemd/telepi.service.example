@@ -1,6 +1,3 @@
-# Deprecated filename kept for compatibility.
-# Use systemd/telepi.service.example instead.
-
 [Unit]
 Description=telepi
 After=network-online.target

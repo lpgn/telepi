@@ -24,7 +24,7 @@ import {
   writeSystemdService,
 } from "./manager-lib.mjs";
 
-const screen = blessed.screen({ smartCSR: true, title: "Telegram Pi Bridge Manager", fullUnicode: true });
+const screen = blessed.screen({ smartCSR: true, title: "telepi Manager", fullUnicode: true });
 
 const MENUS = {
   main: {
@@ -378,7 +378,7 @@ async function renderDetails(status) {
   }
 
   outputBox.setContent([
-    "Telegram Pi Bridge Manager",
+    "telepi Manager",
     "",
     "This screen is a compact control panel for:",
     "- configuring the bridge",
@@ -744,8 +744,8 @@ async function exportTotpQr() {
     return;
   }
   await ensureShareDir();
-  const issuer = "Telegram Pi Bridge";
-  const account = "telegram-pi-bridge";
+  const issuer = "telepi";
+  const account = "telepi";
   const uri = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${config.UNLOCK_TOTP_SECRET}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
   const pngPath = `${SHARE_DIR}/totp-qr.png`;
   const txtPath = `${SHARE_DIR}/totp-uri.txt`;
@@ -770,9 +770,9 @@ async function generateLocalService() {
     `Public example template: ${SYSTEMD_TEMPLATE_FILE}`,
     "",
     `To install system-wide:`,
-    `sudo cp ${service.path} /etc/systemd/system/telegram-pi-bridge.service`,
+    `sudo cp ${service.path} /etc/systemd/system/telepi.service`,
     `sudo systemctl daemon-reload`,
-    `sudo systemctl enable --now telegram-pi-bridge`,
+    `sudo systemctl enable --now telepi`,
   ].join("\n"));
 }
 

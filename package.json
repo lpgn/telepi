@@ -1,11 +1,28 @@
 {
-  "name": "telegram-pi-bridge",
+  "name": "@lpgn/telepi",
   "version": "0.1.0",
-  "private": true,
+  "description": "A small Telegram bridge for pi",
+  "license": "MIT",
   "type": "module",
+  "bin": {
+    "telepi": "bin/telepi.mjs",
+    "telepi-manage": "bin/telepi-manage.mjs",
+    "telepi-tui": "bin/telepi-tui.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "systemd/telepi.service.example",
+    "README.md",
+    "LICENSE",
+    ".env.example"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/index.mjs",
-    "check": "node --check src/index.mjs && node --check src/manage.mjs && node --check src/tui.mjs && node --check src/manager-lib.mjs",
+    "check": "node --check src/index.mjs && node --check src/manage.mjs && node --check src/tui.mjs && node --check src/manager-lib.mjs && node --check src/paths.mjs",
     "bridge:start": "node src/manage.mjs start",
     "bridge:stop": "node src/manage.mjs stop",
     "bridge:restart": "node src/manage.mjs restart",

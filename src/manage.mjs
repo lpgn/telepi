@@ -30,7 +30,7 @@ switch (command) {
     break;
   }
   default:
-    console.log("Usage: node src/manage.mjs [start|stop|restart|status|logs [bridge|audit]]");
+    console.log("Usage: telepi-manage [start|stop|restart|status|logs [bridge|audit]]");
     process.exitCode = 1;
 }
 

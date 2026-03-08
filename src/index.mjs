@@ -2,7 +2,6 @@ import { appendFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/prom
 import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import dotenv from "dotenv";
 import { Bot } from "grammy";
@@ -13,12 +12,13 @@ import {
   ModelRegistry,
   SessionManager,
 } from "@mariozechner/pi-coding-agent";
+import { APP_DIR } from "./paths.mjs";
 
-dotenv.config();
+dotenv.config({ path: path.join(APP_DIR, ".env") });
 
-const BASE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const DATA_DIR = path.join(BASE_DIR, "data");
-const LOGS_DIR = path.join(BASE_DIR, "logs");
+const BASE_DIR = APP_DIR;
+const DATA_DIR = path.join(APP_DIR, "data");
+const LOGS_DIR = path.join(APP_DIR, "logs");
 const SESSIONS_DIR = path.join(DATA_DIR, "sessions");
 const UNLOCK_STATE_FILE = process.env.UNLOCK_STATE_FILE?.trim() || path.join(DATA_DIR, "unlock-state.json");
 const TELEGRAM_BOT_TOKEN = requiredEnv("TELEGRAM_BOT_TOKEN");

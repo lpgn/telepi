@@ -1,4 +1,4 @@
-# Telegram Pi Bridge
+# telepi
 
 A small, opinionated, slightly paranoid bridge between Telegram and [pi](https://github.com/badlogic/pi-mono).
 
@@ -71,7 +71,7 @@ If pi is not working locally, this bridge will not magically become wise through
 ## TUI preview
 
 <p align="center">
-  <img src="./docs/media/tui-screenshot.png" alt="Telegram Pi Bridge TUI screenshot" width="900" />
+  <img src="./docs/media/tui-screenshot.png" alt="telepi TUI screenshot" width="900" />
 </p>
 
 Animated preview: [`docs/media/tui-demo.gif`](./docs/media/tui-demo.gif)
@@ -105,22 +105,26 @@ In other words: simple, but trying not to be reckless.
 
 ## Installation
 
-### 1. Clone the repo
+### Option A: install from npm
 
 ```bash
-git clone https://github.com/yourname/telegram-pi-bridge.git
-cd telegram-pi-bridge
+npm install -g @lpgn/telepi
+mkdir -p ~/telepi
+cd ~/telepi
+cp "$(npm root -g)/@lpgn/telepi/.env.example" .env
 ```
 
-### 2. Install dependencies
+Then edit `.env`.
+
+By default, `telepi` uses the current working directory for `.env`, `data/`, `logs/`, `run/`, and generated `systemd/` files.
+If you want to keep those files somewhere else, set `TELEPI_HOME=/path/to/telepi-home` before running it.
+
+### Option B: run from source
 
 ```bash
+git clone https://github.com/yourname/telepi.git
+cd telepi
 npm install
-```
-
-### 3. Create your config
-
-```bash
 cp .env.example .env
 ```
 
@@ -178,10 +182,22 @@ UNLOCK_SHARED_SECRET=replace_with_a_long_random_secret
 ### Start the bridge
 
 ```bash
+telepi
+```
+
+You can still run it locally from the repo with:
+
+```bash
 npm start
 ```
 
 ### Use the TUI manager
+
+```bash
+telepi-tui
+```
+
+Or from the repo:
 
 ```bash
 npm run tui
@@ -205,6 +221,17 @@ Useful keys:
 - `q` — quit
 
 ### Use the CLI manager
+
+```bash
+telepi-manage status
+telepi-manage start
+telepi-manage stop
+telepi-manage restart
+telepi-manage logs bridge
+telepi-manage logs audit
+```
+
+Or from the repo:
 
 ```bash
 npm run bridge:status
@@ -269,33 +296,33 @@ Recommended precautions:
 
 The repo includes a generic service template at:
 
-- `systemd/telegram-pi-bridge.service.example`
+- `systemd/telepi.service.example`
 
 Your own machine-specific local service file should live at:
 
-- `systemd/telegram-pi-bridge.service`
+- `systemd/telepi.service`
 
 That local file is gitignored on purpose.
 The TUI can generate it for your machine.
 
 If you want to install it system-wide, copy the generated or template file to:
 
-- `/etc/systemd/system/telegram-pi-bridge.service`
+- `/etc/systemd/system/telepi.service`
 
 Example:
 
 ```ini
 [Unit]
-Description=Telegram Pi Bridge
+Description=telepi
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=youruser
-WorkingDirectory=/opt/telegram-pi-bridge
-EnvironmentFile=/opt/telegram-pi-bridge/.env
-ExecStart=/usr/bin/npm start
+WorkingDirectory=/opt/telepi
+EnvironmentFile=/opt/telepi/.env
+ExecStart=/usr/bin/env telepi
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
@@ -315,8 +342,8 @@ Then:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now telegram-pi-bridge
-sudo systemctl status telegram-pi-bridge
+sudo systemctl enable --now telepi
+sudo systemctl status telepi
 ```
 
 ## Final warning, but with affection
