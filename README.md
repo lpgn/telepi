@@ -4,53 +4,37 @@ A small, opinionated, slightly paranoid bridge between Telegram and [pi](https:/
 
 License: [MIT](./LICENSE)
 
-This project is intentionally **lightweight and specialized**:
+## What this is
+
+This repo is a **single-owner remote admin bridge** for talking to **pi** through Telegram.
+
+That is the whole trick:
 
 - **pi** is the agent
-- **this repo** is the bridge
-- that's basically the whole trick
+- **this repo** is the Telegram-shaped door
+- a few locks were added so the door is not completely feral
 
-No giant platform. No orchestration circus. No "AI operating system for synergy-driven workflows." Just a Telegram bot wired into pi, with a few locks on the door.
+No giant platform. No orchestration theme park. No "AI operating system for synergy-driven workflows." Just a Telegram bot wired into pi.
 
-## What this project is
+## What this is not
 
-This is a **single-owner remote admin bridge** for talking to pi through Telegram.
-
-It was built for my own use first, then shared in case it is useful to someone else with similar needs.
-
-Design goals:
-
-- keep it simple
-- keep it small
-- keep pi as the real brain
-- add just enough safety to not instantly regret exposing it to Telegram
-
-## What this project is not
-
-- not a general SaaS
+- not a SaaS
 - not a multi-user chat platform
-- not a polished enterprise product
+- not an enterprise product
 - not guaranteed to be a good idea
 
 ## Vibe-coded disclaimer
 
 This project was **vibe coded**.
 
-That means:
+Which means:
 
 - it works for me
 - it may work for you
-- it may also decide to become a tiny goblin at the worst possible moment
+- it may also become a tiny goblin at an inconvenient time
 
-There is **no warranty**, **no guarantee**, and **no promise of fitness for any purpose whatsoever**.
-Use it **at your own risk**.
-
-Seriously:
-
-- review the code
-- restrict the workspace
-- rotate secrets if you leak them
-- do not point this at anything you cannot afford to break
+There is **no warranty** and **no promise of fitness for any purpose**.
+Please review the code, restrict the workspace, and do not point this at anything you cannot afford to break.
 
 ## Dependency: pi
 
@@ -59,20 +43,20 @@ This bridge depends on **pi** and uses the **pi SDK**.
 - pi repo: https://github.com/badlogic/pi-mono
 - npm package: https://www.npmjs.com/package/@mariozechner/pi-coding-agent
 
-You need pi configured and authenticated separately.
-This bridge does **not** replace pi. It simply gives pi a Telegram-shaped door.
+You need pi installed, configured, and authenticated separately.
+This bridge does **not** replace pi. It just gives pi a Telegram handle.
 
-For example, pi may be authenticated via:
+Examples:
 
 - `pi /login`
-- API keys stored in `~/.pi/agent`
+- credentials stored in `~/.pi/agent`
 
-If pi itself is not configured correctly, this bridge will not be able to answer.
+If pi is not working locally, this bridge will not magically become wise through suffering.
 
 ## Features
 
 - Telegram bot connection
-- pi-powered responses via the pi SDK
+- pi-powered responses through the pi SDK
 - persistent pi session history per Telegram chat
 - locked by default
 - owner-only by Telegram user ID
@@ -82,7 +66,6 @@ If pi itself is not configured correctly, this bridge will not be able to answer
 - audit logging
 - optional owner alerts on denied attempts
 - built-in TUI manager
-- first-run configuration wizard
 - CLI manager commands
 
 ## TUI preview
@@ -91,13 +74,11 @@ If pi itself is not configured correctly, this bridge will not be able to answer
   <img src="./docs/media/tui-screenshot.png" alt="Telegram Pi Bridge TUI screenshot" width="900" />
 </p>
 
-<p align="center">
-  <img src="./docs/media/tui-demo.gif" alt="Telegram Pi Bridge TUI demo" width="900" />
-</p>
+Animated preview: [`docs/media/tui-demo.gif`](./docs/media/tui-demo.gif)
 
 ## Security model
 
-This version is designed for **one owner only** and for **remote admin-style access**.
+This version is designed for **one owner only** and **remote admin-style access**.
 
 It is:
 
@@ -115,6 +96,7 @@ In other words: simple, but trying not to be reckless.
 
 - `src/index.mjs` — main bridge process
 - `src/manage.mjs` — CLI manager
+- `src/manager-lib.mjs` — shared runtime and config helpers
 - `src/tui.mjs` — terminal UI manager
 - `.env.example` — configuration template
 - `bridge.out` — main runtime output log
@@ -144,7 +126,7 @@ cp .env.example .env
 
 Then edit `.env`.
 
-At minimum you need:
+Minimum useful config:
 
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token
@@ -154,8 +136,6 @@ UNLOCK_TOTP_SECRET=your_base32_secret
 ```
 
 ### 4. Make sure pi is installed and authenticated
-
-You need pi available on the machine and configured already.
 
 See:
 
@@ -170,8 +150,8 @@ UNLOCK_METHOD=totp
 UNLOCK_TOTP_SECRET=JBSWY3DPEHPK3PXP
 ```
 
-Use your own base32 secret and load it into an authenticator app.
-Do **not** use the example secret in production unless you enjoy chaos.
+Use your own base32 secret and add it to an authenticator app.
+Do **not** use the example secret in production unless you enjoy improvisational security.
 
 ### Alternative: shared secret unlock
 
@@ -184,49 +164,47 @@ UNLOCK_SHARED_SECRET=replace_with_a_long_random_secret
 
 - `OWNER_TELEGRAM_USER_ID` — only this Telegram user is allowed
 - `OWNER_CHAT_ID` — optional extra lock to one specific chat
-- `ALLOW_PRIVATE_CHATS_ONLY` — reject groups/supergroups/channels
+- `ALLOW_PRIVATE_CHATS_ONLY` — reject groups, supergroups, and channels
 - `UNLOCK_TTL_MINUTES` — auto-lock timeout
 - `PI_WORKSPACE_DIR` — where pi will operate
 - `PI_AGENT_DIR` — where pi config/auth lives
 - `PI_MODEL_PROVIDER` / `PI_MODEL_NAME` — optional fixed model override
 - `PI_THINKING_LEVEL` — optional thinking level override
+- `UNLOCK_STATE_FILE` — optional persisted unlock state file
+- `AUDIT_LOG_FILE` — audit log location
 
-## How to use
+## Usage
 
-## Start the bridge normally
+### Start the bridge
 
 ```bash
 npm start
 ```
 
-## Use the built-in TUI manager
+### Use the TUI manager
 
 ```bash
 npm run tui
 ```
 
-From the TUI you can:
+The TUI is now organized into three sections:
 
-- run a first-run configuration wizard
-- start the bridge
-- stop the bridge
-- restart the bridge
-- see current status and PID
-- view `bridge.out`
-- view `logs/audit.log`
+- **Setup** — wizard, settings, unlock secret tools, TOTP export, systemd file generation, config tests
+- **Bridge** — status, start, stop, restart
+- **Logs** — view and clear bridge/audit logs
 
 Useful keys:
 
-- `w` — first-run wizard
-- `s` — start
-- `x` — stop
-- `r` — restart
-- `b` — bridge log
-- `a` — audit log
-- `u` — refresh
+- `Enter` — open selected section or run selected action
+- `Esc` — go back
+- `1` — jump to Setup
+- `2` — jump to Bridge
+- `3` — jump to Logs
+- `r` — refresh
+- `PgUp` / `PgDn` — scroll details or logs
 - `q` — quit
 
-## Use the CLI manager
+### Use the CLI manager
 
 ```bash
 npm run bridge:status
@@ -237,7 +215,7 @@ npm run bridge:logs
 npm run bridge:audit
 ```
 
-## Use it from Telegram
+### Use it from Telegram
 
 Commands:
 
@@ -262,9 +240,7 @@ Or at least a mildly anxious-man switch.
 
 If `ALERT_OWNER_ON_DENIED=true`, denied attempts generate a Telegram alert to the owner chat.
 
-Audit events are appended as JSON lines to:
-
-- `AUDIT_LOG_FILE`
+Audit events are appended as JSON lines to `AUDIT_LOG_FILE`.
 
 Typical events include:
 
@@ -287,7 +263,7 @@ Recommended precautions:
 - restrict permissions on `.env`, `logs/`, `data/`, and `~/.pi/agent`
 - narrow `PI_WORKSPACE_DIR` as much as possible
 - set `OWNER_CHAT_ID` if you want to pin access to one specific chat
-- rotate secrets if they ever appear in chat history, shell history, screenshots, or the internet being the internet
+- rotate secrets if they ever appear in chat history, shell history, screenshots, or the internet doing internet things
 
 ## systemd example
 
@@ -300,8 +276,7 @@ Your own machine-specific local service file should live at:
 - `systemd/telegram-pi-bridge.service`
 
 That local file is gitignored on purpose.
-
-The first-run TUI wizard can generate that local service file for your machine.
+The TUI can generate it for your machine.
 
 If you want to install it system-wide, copy the generated or template file to:
 
