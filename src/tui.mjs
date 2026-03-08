@@ -25,23 +25,32 @@ import {
 
 const screen = blessed.screen({ smartCSR: true, title: "Telegram Pi Bridge Manager", fullUnicode: true });
 
-const MENU_ITEMS = [
-  "First-run config wizard",
-  "Edit settings",
-  "Regenerate unlock secret",
-  "Export TOTP QR",
-  "Generate local systemd service",
-  "Test configuration",
-  "Start bridge",
-  "Stop bridge",
-  "Restart bridge",
-  "Show bridge log",
-  "Show audit log",
-  "Clear bridge log",
-  "Clear audit log",
-  "Refresh",
-  "Quit",
-];
+const MENUS = {
+  main: {
+    title: " Main Menu ",
+    items: ["Setup", "Bridge", "Logs", "Refresh", "Quit"],
+  },
+  setup: {
+    title: " Setup ",
+    items: [
+      "First-run config wizard",
+      "Edit settings",
+      "Regenerate unlock secret",
+      "Export TOTP QR",
+      "Generate local systemd service",
+      "Test configuration",
+      "Back",
+    ],
+  },
+  bridge: {
+    title: " Bridge ",
+    items: ["Status", "Start bridge", "Stop bridge", "Restart bridge", "Back"],
+  },
+  logs: {
+    title: " Logs ",
+    items: ["Show bridge log", "Show audit log", "Clear bridge log", "Clear audit log", "Back"],
+  },
+};
 
 const statusBox = blessed.box({
   parent: screen,
@@ -62,13 +71,13 @@ const menu = blessed.list({
   left: 0,
   width: 32,
   height: "100%-13",
-  label: " Menu ",
+  label: MENUS.main.title,
   border: "line",
   keys: true,
   vi: true,
   mouse: true,
   style: { border: { fg: "cyan" }, item: { fg: "white" }, selected: { bg: "blue", fg: "white", bold: true } },
-  items: MENU_ITEMS,
+  items: [],
 });
 
 const outputBox = blessed.box({
@@ -77,7 +86,7 @@ const outputBox = blessed.box({
   left: 32,
   width: "100%-32",
   height: "100%-13",
-  label: " Output ",
+  label: " Details ",
   tags: true,
   scrollable: true,
   alwaysScroll: true,
@@ -101,66 +110,146 @@ const helpBox = blessed.box({
   border: "line",
   style: { border: { fg: "cyan" } },
   padding: { left: 1, right: 1 },
-  content:
-    "{bold}Enter{/bold} run menu  {bold}w{/bold} wizard  {bold}e{/bold} edit  {bold}g{/bold} gen service  {bold}t{/bold} test  {bold}s{/bold} start  {bold}x{/bold} stop  {bold}r{/bold} restart  {bold}q{/bold} quit",
 });
 
+let currentMenu = "main";
 let currentLog = "bridge";
 let statusTimer;
+let currentStatusMessage = "Ready";
+let modalDepth = 0;
 
 menu.focus();
-menu.on("select", async (_item, index) => runAction(index));
-screen.key(["q", "C-c", "escape"], () => shutdown());
-screen.key(["w"], async () => runAction(0));
-screen.key(["e"], async () => runAction(1));
-screen.key(["g"], async () => runAction(4));
-screen.key(["t"], async () => runAction(5));
-screen.key(["s"], async () => runAction(6));
-screen.key(["x"], async () => runAction(7));
-screen.key(["r"], async () => runAction(8));
-screen.key(["b"], async () => runAction(9));
-screen.key(["a"], async () => runAction(10));
-screen.key(["u"], async () => runAction(13));
+
+screen.key(["q", "C-c"], () => {
+  if (modalDepth > 0) return;
+  shutdown();
+});
+menu.key(["enter"], async () => {
+  if (modalDepth > 0) return;
+  await runSelectedAction();
+});
+screen.key(["1"], async () => {
+  if (modalDepth > 0) return;
+  await openMenu("setup", "Setup menu");
+});
+screen.key(["2"], async () => {
+  if (modalDepth > 0) return;
+  await openMenu("bridge", "Bridge menu");
+});
+screen.key(["3"], async () => {
+  if (modalDepth > 0) return;
+  await openMenu("logs", "Logs menu");
+});
+screen.key(["r"], async () => {
+  if (modalDepth > 0) return;
+  setMessage("Refreshed");
+  await refreshAll();
+});
+menu.key(["escape", "backspace", "left", "h"], () => {
+  if (modalDepth > 0) return;
+  goBack();
+});
 screen.key(["pageup"], () => { outputBox.scroll(-15); screen.render(); });
 screen.key(["pagedown"], () => { outputBox.scroll(15); screen.render(); });
 
+setMenu("main");
 await refreshAll();
 statusTimer = setInterval(refreshAll, 2500);
 
 const envStatus = await getEnvStatus();
 if (!envStatus.configured) {
-  setMessage("Config incomplete. Open the first-run wizard with 'w'.", true);
+  currentMenu = "setup";
+  setMenu("setup");
+  setMessage("Config incomplete. Open the first-run wizard with Enter.", true);
+  outputBox.setLabel(" Details ");
   outputBox.setContent([
     `Config file: ${ENV_FILE}`,
     "",
     "Detected issues:",
     ...envStatus.issues.map((issue) => `- ${issue}`),
     "",
-    "Tip: run the first-run config wizard from the menu.",
+    "Tip: use Setup -> First-run config wizard.",
   ].join("\n"));
   screen.render();
 }
 
-async function runAction(index) {
+async function runSelectedAction() {
+  const item = menu.getItem(menu.selected)?.content;
+  if (!item) return;
+  await runAction(currentMenu, item);
+}
+
+async function runAction(section, item) {
   try {
-    switch (index) {
-      case 0: await runWizard(); break;
-      case 1: await runSettingsEditor(); break;
-      case 2: await regenerateSecret(); break;
-      case 3: await exportTotpQr(); break;
-      case 4: await generateLocalService(); break;
-      case 5: await runConfigurationTest(); break;
-      case 6: setMessage((await startBridge()).message); currentLog = "bridge"; break;
-      case 7: setMessage((await stopBridge()).message); currentLog = "bridge"; break;
-      case 8: setMessage((await restartBridge()).message); currentLog = "bridge"; break;
-      case 9: currentLog = "bridge"; setMessage(`Showing ${OUT_LOG}`); break;
-      case 10: currentLog = "audit"; setMessage(`Showing ${AUDIT_LOG}`); break;
-      case 11: setMessage(await clearLogFile(OUT_LOG)); currentLog = "bridge"; break;
-      case 12: setMessage(await clearLogFile(AUDIT_LOG)); currentLog = "audit"; break;
-      case 13: setMessage("Refreshed"); break;
-      case 14: shutdown(); return;
-      default: break;
+    if (section === "main") {
+      if (item === "Setup") {
+        await openMenu("setup", "Setup menu");
+      } else if (item === "Bridge") {
+        await openMenu("bridge", "Bridge menu");
+      } else if (item === "Logs") {
+        await openMenu("logs", "Logs menu");
+      } else if (item === "Refresh") {
+        setMessage("Refreshed");
+        await refreshAll();
+      } else if (item === "Quit") {
+        shutdown();
+      }
+      return;
     }
+
+    if (item === "Back") {
+      goBack();
+      return;
+    }
+
+    if (section === "setup") {
+      if (item === "First-run config wizard") {
+        await runWizard();
+      } else if (item === "Edit settings") {
+        await runSettingsEditor();
+      } else if (item === "Regenerate unlock secret") {
+        await regenerateSecret();
+      } else if (item === "Export TOTP QR") {
+        await exportTotpQr();
+      } else if (item === "Generate local systemd service") {
+        await generateLocalService();
+      } else if (item === "Test configuration") {
+        await runConfigurationTest();
+      }
+    } else if (section === "bridge") {
+      if (item === "Status") {
+        setMessage("Bridge status refreshed");
+        outputBox.setLabel(" Details ");
+        outputBox.setContent(await renderBridgeSummary());
+      } else if (item === "Start bridge") {
+        setMessage((await startBridge()).message);
+        outputBox.setLabel(" Details ");
+        outputBox.setContent(await renderBridgeSummary());
+      } else if (item === "Stop bridge") {
+        setMessage((await stopBridge()).message);
+        outputBox.setLabel(" Details ");
+        outputBox.setContent(await renderBridgeSummary());
+      } else if (item === "Restart bridge") {
+        setMessage((await restartBridge()).message);
+        outputBox.setLabel(" Details ");
+        outputBox.setContent(await renderBridgeSummary());
+      }
+    } else if (section === "logs") {
+      if (item === "Show bridge log") {
+        currentLog = "bridge";
+        setMessage(`Showing ${OUT_LOG}`);
+      } else if (item === "Show audit log") {
+        currentLog = "audit";
+        setMessage(`Showing ${AUDIT_LOG}`);
+      } else if (item === "Clear bridge log") {
+        setMessage(await clearLogFile(OUT_LOG));
+        currentLog = "bridge";
+      } else if (item === "Clear audit log") {
+        setMessage(await clearLogFile(AUDIT_LOG));
+        currentLog = "audit";
+      }
+    }
+
     await refreshAll();
   } catch (error) {
     setMessage(`Error: ${error.message || String(error)}`, true);
@@ -168,10 +257,45 @@ async function runAction(index) {
   }
 }
 
+async function openMenu(name, message) {
+  currentMenu = name;
+  setMenu(name);
+  if (message) setMessage(message);
+  await refreshAll();
+}
+
+function setMenu(name) {
+  const config = MENUS[name] || MENUS.main;
+  menu.setLabel(config.title);
+  menu.clearItems();
+  menu.setItems([...config.items]);
+  menu.select(0);
+  menu.focus();
+  renderHelp();
+  screen.render();
+}
+
+function goBack() {
+  if (currentMenu === "main") {
+    setMessage("At main menu. Press q to quit.");
+    screen.render();
+    return;
+  }
+
+  currentMenu = "main";
+  setMenu("main");
+  setMessage("Main menu");
+  refreshAll().catch((error) => {
+    setMessage(`Error: ${error.message || String(error)}`, true);
+    screen.render();
+  });
+}
+
 async function refreshAll() {
   const status = await getStatus();
   renderStatus(status);
-  await renderLog();
+  await renderDetails(status);
+  renderHelp();
   screen.render();
 }
 
@@ -192,19 +316,101 @@ function renderStatus(status) {
   statusBox.setContent(lines.join("\n"));
 }
 
-async function renderLog() {
-  const target = currentLog === "bridge" ? OUT_LOG : AUDIT_LOG;
-  const content = await readLogTail(target, 32000);
-  outputBox.setLabel(` Output - ${currentLog === "bridge" ? "bridge.out" : "audit.log"} `);
-  outputBox.setContent(content || "(empty)");
-  outputBox.setScrollPerc(100);
+async function renderDetails(status) {
+  if (currentMenu === "logs") {
+    const target = currentLog === "bridge" ? OUT_LOG : AUDIT_LOG;
+    const content = await readLogTail(target, 32000);
+    outputBox.setLabel(` Logs - ${currentLog === "bridge" ? "bridge.out" : "audit.log"} `);
+    outputBox.setContent(content || "(empty)");
+    outputBox.setScrollPerc(100);
+    return;
+  }
+
+  outputBox.setLabel(" Details ");
+  if (currentMenu === "setup") {
+    const env = status.env;
+    outputBox.setContent([
+      "Setup tools:",
+      "- First-run config wizard",
+      "- Edit settings",
+      "- Regenerate unlock secret",
+      "- Export TOTP QR",
+      "- Generate local systemd service",
+      "- Test configuration",
+      "",
+      `Config file: ${ENV_FILE}`,
+      `Configured: ${env.configured ? "yes" : "no"}`,
+      ...(env.issues.length ? ["", "Issues:", ...env.issues.map((issue) => `- ${issue}`)] : ["", "No config issues detected."]),
+      "",
+      "Clipboard note:",
+      "For large paste/copy operations, it is usually easier to edit files outside the TUI.",
+    ].join("\n"));
+    return;
+  }
+
+  if (currentMenu === "bridge") {
+    outputBox.setContent(await renderBridgeSummary());
+    return;
+  }
+
+  outputBox.setContent([
+    "Telegram Pi Bridge Manager",
+    "",
+    "This screen is a compact control panel for:",
+    "- configuring the bridge",
+    "- starting/stopping the bridge",
+    "- viewing logs",
+    "",
+    "Navigation:",
+    "- Enter opens the selected item",
+    "- Esc goes back to the previous level",
+    "- q quits the TUI",
+    "- 1 / 2 / 3 jump to Setup / Bridge / Logs",
+    "",
+    "Tip: the menu on the left is the primary navigation.",
+  ].join("\n"));
+}
+
+async function renderBridgeSummary() {
+  const status = await getStatus();
+  const checks = await testConfiguration();
+  const warnings = checks.filter((check) => !check.ok);
+  return [
+    "Bridge controls:",
+    "- Status",
+    "- Start bridge",
+    "- Stop bridge",
+    "- Restart bridge",
+    "",
+    `Running: ${status.running ? "yes" : "no"}`,
+    `PID: ${status.pid ?? "-"}`,
+    `Bridge log: ${status.outLog.path}`,
+    `Audit log: ${status.auditLog.path}`,
+    "",
+    warnings.length
+      ? `Warnings: ${warnings.length}`
+      : "Configuration checks look good.",
+    ...warnings.slice(0, 5).map((warning) => `- ${warning.name}: ${warning.details}`),
+    "",
+    "Tip: open Logs to watch runtime output.",
+  ].join("\n");
+}
+
+function renderHelp() {
+  const section = currentMenu === "main" ? "Main" : `Main / ${currentMenu[0].toUpperCase() + currentMenu.slice(1)}`;
+  const backHint = currentMenu === "main" ? "Esc hint" : "Esc back";
+  const lines = [
+    `{green-fg}${escapeTags(currentStatusMessage || "Ready")}{/green-fg}`,
+    `{bold}${section}:{/bold} Enter select  {bold}${backHint}{/bold}  {bold}q{/bold} quit  {bold}r{/bold} refresh  {bold}PgUp/PgDn{/bold} scroll`,
+    `{bold}1{/bold} Setup  {bold}2{/bold} Bridge  {bold}3{/bold} Logs`,
+  ];
+  helpBox.setContent(lines.join("\n"));
 }
 
 function setMessage(message, isError = false) {
-  helpBox.setContent(
-    `${isError ? "{red-fg}" : "{green-fg}"}${escapeTags(message)}${isError ? "{/red-fg}" : "{/green-fg}"}\n` +
-      "{bold}Enter{/bold} run menu  {bold}w{/bold} wizard  {bold}e{/bold} edit  {bold}g{/bold} gen service  {bold}t{/bold} test  {bold}s{/bold} start  {bold}x{/bold} stop  {bold}r{/bold} restart  {bold}q{/bold} quit"
-  );
+  currentStatusMessage = `${isError ? "ERROR: " : ""}${message}`;
+  helpBox.setContent("");
+  renderHelp();
 }
 
 async function runWizard() {
@@ -296,6 +502,7 @@ async function runWizard() {
 
   await writeEnvConfig(config);
   setMessage(`Saved configuration to ${ENV_FILE}`);
+  outputBox.setLabel(" Details ");
   outputBox.setContent([
     `Saved config to ${ENV_FILE}`,
     "",
@@ -409,12 +616,14 @@ async function regenerateSecret() {
     config.UNLOCK_TOTP_SECRET = generateTotpSecret();
     await writeEnvConfig(config);
     setMessage("Generated new TOTP secret and saved .env");
+    outputBox.setLabel(" Details ");
     outputBox.setContent(`New TOTP secret:\n\n${config.UNLOCK_TOTP_SECRET}\n\nUse Export TOTP QR to create a QR image.`);
   } else {
     config.UNLOCK_METHOD = "secret";
     config.UNLOCK_SHARED_SECRET = generateSharedSecret();
     await writeEnvConfig(config);
     setMessage("Generated new shared secret and saved .env");
+    outputBox.setLabel(" Details ");
     outputBox.setContent(`New shared secret:\n\n${config.UNLOCK_SHARED_SECRET}`);
   }
 }
@@ -434,6 +643,7 @@ async function exportTotpQr() {
   await QRCode.toFile(pngPath, uri, { type: "png", width: 512, margin: 2 });
   await import("node:fs/promises").then((fs) => fs.writeFile(txtPath, `${uri}\n`, "utf8"));
   setMessage(`Exported TOTP QR to ${pngPath}`);
+  outputBox.setLabel(" Details ");
   outputBox.setContent([`QR image: ${pngPath}`, `OTP URI: ${txtPath}`, "", uri].join("\n"));
 }
 
@@ -445,6 +655,7 @@ async function generateLocalService() {
   if (installPath == null) return cancel();
   const service = await writeSystemdService({ installPath, user: serviceUser });
   setMessage(`Generated local service: ${service.path}`);
+  outputBox.setLabel(" Details ");
   outputBox.setContent([
     `Local service file: ${service.path}`,
     `Public example template: ${SYSTEMD_TEMPLATE_FILE}`,
@@ -460,10 +671,12 @@ async function runConfigurationTest() {
   const checks = await testConfiguration();
   const lines = checks.map((check) => `${check.ok ? "[OK]" : "[WARN]"} ${check.name} — ${check.details}`);
   setMessage(checks.every((c) => c.ok) ? "Configuration test passed" : "Configuration test found issues", !checks.every((c) => c.ok));
+  outputBox.setLabel(" Details ");
   outputBox.setContent(lines.join("\n"));
 }
 
 async function askText(label, initial = "", options = {}) {
+  modalDepth += 1;
   return new Promise((resolve) => {
     const box = blessed.box({
       parent: screen,
@@ -517,7 +730,9 @@ async function askText(label, initial = "", options = {}) {
     };
 
     const cleanup = (value) => {
+      modalDepth = Math.max(0, modalDepth - 1);
       box.destroy();
+      menu.focus();
       screen.render();
       resolve(value);
     };
@@ -542,6 +757,7 @@ async function askText(label, initial = "", options = {}) {
 }
 
 async function askChoice(label, options, current) {
+  modalDepth += 1;
   return new Promise((resolve) => {
     const list = blessed.list({
       parent: screen,
@@ -561,13 +777,20 @@ async function askChoice(label, options, current) {
     list.select(initialIndex);
     list.focus();
     screen.render();
-    const finish = (value) => { list.destroy(); screen.render(); resolve(value); };
+    const finish = (value) => {
+      modalDepth = Math.max(0, modalDepth - 1);
+      list.destroy();
+      menu.focus();
+      screen.render();
+      resolve(value);
+    };
     list.key(["enter"], () => finish(list.getItem(list.selected).content));
-    list.key(["escape", "q"], () => finish(null));
+    list.key(["escape", "q", "left", "h", "backspace"], () => finish(null));
   });
 }
 
 async function askYesNo(message, defaultYes = true) {
+  modalDepth += 1;
   return new Promise((resolve) => {
     const box = blessed.box({
       parent: screen,
@@ -587,14 +810,16 @@ async function askYesNo(message, defaultYes = true) {
     });
 
     const finish = (value) => {
+      modalDepth = Math.max(0, modalDepth - 1);
       box.destroy();
+      menu.focus();
       screen.render();
       resolve(value);
     };
 
     box.key(["enter", "y", "Y"], () => finish(true));
     box.key(["n", "N"], () => finish(false));
-    box.key(["escape", "q"], () => finish(null));
+    box.key(["escape", "q", "left", "h", "backspace"], () => finish(null));
     box.focus();
     screen.render();
   });
