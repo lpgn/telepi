@@ -459,7 +459,7 @@ async function inspectSystemdService(scope) {
       subState: fields.SubState || "",
       fragmentPath,
       mainPid,
-      controlHint: scope === "user" ? `systemctl --user <start|stop|restart> ${SYSTEMD_UNIT}` : `sudo systemctl <start|stop|restart> ${SYSTEMD_UNIT}`,
+      controlHint: scope === "user" ? `systemctl --user <start|stop|restart> ${SYSTEMD_UNIT}` : `sudo -n systemctl <start|stop|restart> ${SYSTEMD_UNIT}`,
     };
   } catch {
     return {
@@ -472,7 +472,7 @@ async function inspectSystemdService(scope) {
       subState: "",
       fragmentPath: "",
       mainPid: 0,
-      controlHint: scope === "user" ? `systemctl --user <start|stop|restart> ${SYSTEMD_UNIT}` : `sudo systemctl <start|stop|restart> ${SYSTEMD_UNIT}`,
+      controlHint: scope === "user" ? `systemctl --user <start|stop|restart> ${SYSTEMD_UNIT}` : `sudo -n systemctl <start|stop|restart> ${SYSTEMD_UNIT}`,
     };
   }
 }
@@ -488,16 +488,20 @@ function parseSystemctlShow(raw) {
 }
 
 async function controlSystemdService(systemd, action) {
+  const command = systemd.scope === "user" ? "systemctl" : "sudo";
   const args = systemd.scope === "user"
     ? ["--user", action, SYSTEMD_UNIT]
-    : [action, SYSTEMD_UNIT];
+    : ["-n", "systemctl", action, SYSTEMD_UNIT];
 
   try {
-    await execFileAsync("systemctl", args);
+    await execFileAsync(command, args);
   } catch (error) {
     const details = [error?.stderr, error?.stdout, error?.message].filter(Boolean).join(" ").trim();
+    const extra = systemd.scope === "system"
+      ? ` Interactive sudo prompting is not supported here. Use a terminal and run: sudo systemctl ${action} ${SYSTEMD_UNIT}`
+      : "";
     throw new Error(
-      `Could not ${action} ${SYSTEMD_UNIT} via systemd (${systemd.scope}). ${details || "systemctl failed"}. Try: ${systemd.controlHint}`
+      `Could not ${action} ${SYSTEMD_UNIT} via systemd (${systemd.scope}). ${details || `${command} failed`}. Try: ${systemd.controlHint}.${extra}`
     );
   }
 }
